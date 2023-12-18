@@ -5,104 +5,111 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <errno.h>
 
-// Create Pipes 
-// mkfifo p1 p2
-#define BUFFER_SIZE 1024
-static int global_count = 0;
 pthread_t reader_thread, writer_thread;
 pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
-int fd_pipe1, fd_pipe2;
+int global_count = 0;
+int pipe1_fd, pipe2_fd;
 
-void increment_global_count() {
-    pthread_mutex_lock(&count_mutex);
-    global_count++;
-    pthread_mutex_unlock(&count_mutex);
-}
-
-void *reader_func(void *arg) {
-    char buffer[BUFFER_SIZE];
-    while (fgets(buffer, BUFFER_SIZE, stdin) != NULL) {
-        write(fd_pipe1, buffer, strlen(buffer));
-        increment_global_count();
+void *reader_thread_func(void *arg)
+{
+    char line[1024];
+    while (fgets(line, sizeof(line), stdin) != NULL)
+    {
+        if (write(pipe1_fd, line, strlen(line)) == -1)
+        {
+            perror("Write to pipe1 failed");
+            break;
+        }
+        pthread_mutex_lock(&count_mutex);
+        global_count++;
+        pthread_mutex_unlock(&count_mutex);
     }
     return NULL;
 }
 
-void *writer_func(void *arg) {
-    char buffer[BUFFER_SIZE];
-    int num_read;
-    while ((num_read = read(fd_pipe2, buffer, BUFFER_SIZE)) > 0) {
-        write(STDOUT_FILENO, buffer, num_read);
-        increment_global_count();
+void *writer_thread_func(void *arg)
+{
+    char line[1024];
+    ssize_t nread;
+    while ((nread = read(pipe2_fd, line, sizeof(line) - 1)) > 0)
+    {
+        line[nread] = '\0';
+        fputs(line, stdout);
+        fflush(stdout); // Ensure immediate output
+        pthread_mutex_lock(&count_mutex);
+        global_count++;
+        pthread_mutex_unlock(&count_mutex);
     }
     return NULL;
 }
 
-void signal_handler(int sig) {
+void sigint_handler(int sig)
+{
     pthread_cancel(reader_thread);
     pthread_cancel(writer_thread);
     pthread_join(reader_thread, NULL);
     pthread_join(writer_thread, NULL);
-    printf("\n Total lines: %d\n", global_count);
+    printf("Total lines processed: %d\n", global_count);
     exit(0);
 }
 
-int main(int argc, int *argv[]) {
-
-    if (argc != 3) {
-        printf("Usage: %s <name> <name>\n", argv[0]);
+int main(int argc, char *argv[])
+{
+    if (argc != 3)
+    {
+        fprintf(stderr, "Usage: %s <pipe1> <pipe2>\n", argv[0]);
         return 1;
     }
 
     struct sigaction sa;
-    sa.sa_handler = SIG_IGN;
-    sa.sa_flags = 0;
+    sa.sa_handler = sigint_handler;
     sigemptyset(&sa.sa_mask);
-    if (sigaction(SIGINT, &sa, NULL) == -1) {
-        perror("Error setting up signal handler");
-        goto Error;
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+    {
+        perror("sigaction");
+        return 1;
     }
 
-    fd_pipe1 = open(argv[1], O_WRONLY);
-    if (fd_pipe1 == -1) {
-        perror("Error opening pipe1");
-        goto Error;
+    pipe1_fd = open(argv[1], O_WRONLY);
+    if (pipe1_fd == -1)
+    {
+        perror("Open pipe1");
+        return 1;
     }
 
-    fd_pipe2 = open(argv[2], O_RDONLY);
-    if (fd_pipe2 == -1) {
-        perror("Error opening pipe2");
-        goto Error;
+    pipe2_fd = open(argv[2], O_RDONLY);
+    if (pipe2_fd == -1)
+    {
+        perror("Open pipe2");
+        close(pipe1_fd);
+        return 1;
     }
 
-    if (pthread_create(&reader_thread, NULL, reader_func, NULL) != 0) {
-        perror("Error creating reader thread");
-        goto Error;
+    if (pthread_create(&reader_thread, NULL, reader_thread_func, NULL) != 0)
+    {
+        perror("pthread_create reader");
+        close(pipe1_fd);
+        close(pipe2_fd);
+        return 1;
     }
 
-    if (pthread_create(&writer_thread, NULL, writer_func, NULL) != 0) {
-        perror("Error creating writer thread");
-        goto Error;
+    if (pthread_create(&writer_thread, NULL, writer_thread_func, NULL) != 0)
+    {
+        perror("pthread_create writer");
+        pthread_cancel(reader_thread);
+        close(pipe1_fd);
+        close(pipe2_fd);
+        return 1;
     }
 
     pthread_join(reader_thread, NULL);
     pthread_join(writer_thread, NULL);
 
-    close(fd_pipe1);
-    close(fd_pipe2);
-    pthread_mutex_destroy(&count_mutex);
+    close(pipe1_fd);
+    close(pipe2_fd);
     return 0;
-
-    return 0;
-
-
-Error:
-    if (fd_pipe1 != -1) close(fd_pipe1);
-    if (fd_pipe2 != -1) close(fd_pipe2);
-    return 1;
-
 }
-
-
-

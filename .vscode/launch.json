@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/alsjourney/Library/Mobile Documents/com~apple~CloudDocs/fh/msc/semester_1/operating_systems/exercises/exercise_8/08_exercise_chat",
+      "program": "/Users/alsjourney/Library/Mobile Documents/com~apple~CloudDocs/fh/msc/semester_1/operating_systems/exercises/exercise_8/08_exercise_chat/build/Debug/outDebug"
+    }
+  ]
+}
