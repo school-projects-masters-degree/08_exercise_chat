@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+// How to compile
+// gcc chat.c -o chat
 
 // Create Pipes
 // mkfifo p1 p2
@@ -33,10 +35,21 @@ void *writer_func(void *arg)
     char buffer[BUFFER_SIZE];
     while (fgets(buffer, BUFFER_SIZE, stdin) != NULL)
     {
-        if (write(fd_pipe1, buffer, strlen(buffer)) == -1)
+        size_t len = strlen(buffer);
+
+        // Check if the last character is not a newline and the buffer is full
+        if (buffer[len - 1] != '\n' && len == BUFFER_SIZE - 1)
+        {
+            increment_global_count();
+            printf("\nTotal lines: %d\n", global_count);
+            perror("Error: Input line is too long\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if (write(fd_pipe1, buffer, len) == -1)
         {
             perror("Write error in reader thread");
-            exit(0);
+            exit(EXIT_FAILURE);
         }
         increment_global_count();
     }
@@ -72,6 +85,10 @@ void *reader_func(void *arg)
     if (num_read == 0)
     {
         // Detected EOF - other end closed
+        // Increment count for the last line
+        increment_global_count();
+        // Print total lines
+        printf("\nTotal lines: %d\n", global_count);
         printf("Writer detected EOF. Exiting.\n");
         exit(0);
     }
@@ -79,13 +96,20 @@ void *reader_func(void *arg)
     close(fd_pipe2);
     pthread_exit(NULL);
 }
+
 void signal_handler(int sig)
 {
+
+    // Increment count for the SIGINT signal
+    increment_global_count();
+
+    // Otherwise we would count +1 on the other side
+    // And we would have a total lines count mismatch
     pthread_cancel(reader_thread);
     pthread_cancel(writer_thread);
     pthread_join(reader_thread, NULL);
     pthread_join(writer_thread, NULL);
-    printf("\n Total lines: %d\n", global_count);
+    printf("\nTotal lines: %d\n", global_count);
     exit(0);
 }
 
