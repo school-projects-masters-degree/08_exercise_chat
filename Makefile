@@ -3,4 +3,4 @@ CC = gcc
 CFLAGS = -g
 
 chat: chat.o
-	$(CC) $(CFLAGS) -o chat chat.o -pthread
+	$(CC) $(CFLAGS) -o chat chat.o
